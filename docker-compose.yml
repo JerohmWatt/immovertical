@@ -39,7 +39,7 @@ services:
     volumes:
       - ./apps/watchtower:/app
       - ./common:/app/common # Partage des modèles
-    command: uvicorn apps.watchtower.src.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   postgres_data:

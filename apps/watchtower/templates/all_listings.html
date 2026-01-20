@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toutes les Détections | Immo-Bé</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <nav class="bg-slate-900 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="/" class="text-xl font-bold tracking-tight hover:text-indigo-400 transition">🏰 IMMO-BÉ <span class="font-light text-slate-400">Archive</span></a>
+            <a href="/" class="text-sm bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition border border-slate-700">← Retour au Dashboard</a>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800">Toutes les Détections</h2>
+                    <p class="text-slate-500 text-sm">Historique complet des biens identifiés par la Watchtower</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="window.location.reload()" class="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition">Actualiser</button>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                            <th class="px-8 py-4">ID / Plateforme</th>
+                            <th class="px-8 py-4">Statut</th>
+                            <th class="px-8 py-4">Détails</th>
+                            <th class="px-8 py-4">Prix Est.</th>
+                            <th class="px-8 py-4">Détection</th>
+                            <th class="px-8 py-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for l in listings %}
+                        <tr class="hover:bg-indigo-50/30 transition">
+                            <td class="px-8 py-4">
+                                <div class="font-mono text-xs font-bold text-indigo-600">{{ l.source_id }}</div>
+                                <div class="text-xs text-slate-400 uppercase tracking-tighter">{{ l.platform }}</div>
+                            </td>
+                            <td class="px-8 py-4">
+                                {% if l.status == "PENDING" %}
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-700 border border-amber-200">En attente</span>
+                                {% else %}
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 border border-emerald-200">{{ l.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-8 py-4">
+                                <div class="text-sm font-medium text-slate-700">
+                                    {% if l.surface_habitable %}{{ l.surface_habitable }}m²{% else %}-{% endif %} 
+                                    • {% if l.rooms %}{{ l.rooms }} ch.{% else %}N/C{% endif %}
+                                </div>
+                                <div class="text-[10px] text-slate-400">Lambert 72: {% if l.geom %}✅ Géo-localisé{% else %}❌ Non localisé{% endif %}</div>
+                            </td>
+                            <td class="px-8 py-4 font-bold text-slate-900">
+                                {% if l.price %}{{ "{:,.0f}".format(l.price).replace(',', ' ') }} €{% else %}N/C{% endif %}
+                            </td>
+                            <td class="px-8 py-4">
+                                <div class="text-sm text-slate-600">{{ l.created_at.strftime('%d/%m/%Y') }}</div>
+                                <div class="text-xs text-slate-400">{{ l.created_at.strftime('%H:%M:%S') }}</div>
+                            </td>
+                            <td class="px-8 py-4 text-right">
+                                <a href="{{ l.url }}" target="_blank" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 font-bold text-sm">
+                                    Voir 🔗
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            {% if not listings %}
+            <div class="p-20 text-center space-y-4">
+                <div class="text-5xl text-slate-200">🔍</div>
+                <p class="text-slate-400 italic">Aucune détection enregistrée pour le moment.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer class="container mx-auto p-8 text-center text-slate-400 text-xs">
+        Immo-Bé Watchtower v1.0 • Truth Engine Sentinel
+    </footer>
+</body>
+</html>

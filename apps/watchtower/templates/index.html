@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immo-Bé Watchtower | Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <nav class="bg-indigo-700 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-tight">🏰 IMMO-BÉ <span class="font-light text-indigo-200">Watchtower</span></h1>
+            <div class="flex items-center space-x-4 text-sm">
+                <span id="redis-status" class="flex items-center"><span class="h-2 w-2 rounded-full bg-green-400 mr-2 status-pulse"></span> Redis OK</span>
+                <span id="db-status" class="flex items-center"><span class="h-2 w-2 rounded-full bg-green-400 mr-2 status-pulse"></span> Database OK</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6 space-y-8">
+        <!-- Stats Section -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" hx-get="/ui/stats" hx-trigger="load, every 5s">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-sm font-medium text-slate-500 uppercase">Annonces Totales</p>
+                <p class="text-3xl font-bold" id="stat-total">-</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-sm font-medium text-slate-500 uppercase">File d'attente Scrape</p>
+                <p class="text-3xl font-bold text-indigo-600" id="stat-queue">-</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-sm font-medium text-slate-500 uppercase">Dernière Scan</p>
+                <p class="text-lg font-semibold" id="stat-last-scan">En attente...</p>
+            </div>
+        </div>
+
+        <!-- Actions Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Manual Detect -->
+            <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                <h2 class="text-lg font-bold">Détection Manuelle</h2>
+                <form hx-post="/ui/manual-detect" hx-target="#detect-result" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700">URL Immoweb</label>
+                        <input type="text" name="url" placeholder="https://www.immoweb.be/..." 
+                               class="mt-1 block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 border">
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-lg hover:bg-indigo-700 transition shadow-sm">
+                        Détecter & Analyser
+                    </button>
+                </form>
+                <div id="detect-result" class="text-sm"></div>
+            </div>
+
+            <!-- Run Scouts -->
+            <div class="bg-indigo-50 p-8 rounded-2xl border-2 border-indigo-100 flex flex-col justify-center items-center text-center space-y-4">
+                <h2 class="text-lg font-bold text-indigo-900">Scan des Scouts</h2>
+                <p class="text-sm text-indigo-700">Lancer manuellement la recherche sur toutes les plateformes (Immoweb Maisons/Apparts).</p>
+                <button hx-post="/ui/run-scouts" hx-indicator="#scout-loader"
+                        class="bg-white text-indigo-700 border-2 border-indigo-600 font-bold px-8 py-3 rounded-xl hover:bg-indigo-600 hover:text-white transition group">
+                    <span id="scout-loader" class="htmx-indicator animate-spin inline-block mr-2">🌀</span>
+                    Lancer le Scan Complet
+                </button>
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="bg-red-50 p-6 rounded-2xl border border-red-100 flex justify-between items-center">
+            <div class="space-y-1">
+                <h3 class="text-red-900 font-bold">Zone de Danger</h3>
+                <p class="text-red-700 text-xs">Supprimer définitivement toutes les détections de la base de données.</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div id="clear-result"></div>
+                <button hx-post="/ui/clear-listings" 
+                        hx-confirm="Êtes-vous sûr de vouloir supprimer TOUTES les détections ?"
+                        hx-target="#clear-result"
+                        class="bg-red-600 text-white font-bold px-6 py-2.5 rounded-lg hover:bg-red-700 transition shadow-sm text-sm">
+                    Vider la Base
+                </button>
+            </div>
+        </div>
+
+        <!-- Latest Detections -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h2 class="text-lg font-bold uppercase tracking-wider text-slate-600 text-sm">Dernières Détections</h2>
+                <div class="flex space-x-4">
+                    <button hx-get="/ui/listings" hx-target="#listings-table" class="text-indigo-600 text-sm font-bold hover:underline">Rafraîchir</button>
+                    <a href="/all" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700 transition">Voir tout →</a>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs font-bold uppercase">
+                            <th class="px-6 py-3">ID Platform</th>
+                            <th class="px-6 py-3">Platform</th>
+                            <th class="px-6 py-3">Status</th>
+                            <th class="px-6 py-3">URL</th>
+                            <th class="px-6 py-3">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listings-table" hx-get="/ui/listings" hx-trigger="load, every 10s">
+                        <tr><td colspan="5" class="px-6 py-8 text-center text-slate-400 italic">Chargement des données...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <footer class="container mx-auto p-6 text-center text-slate-400 text-xs">
+        &copy; 2026 Immo-Bé Truth Engine. Construit avec passion par l'Architecte Principal.
+    </footer>
+</body>
+</html>

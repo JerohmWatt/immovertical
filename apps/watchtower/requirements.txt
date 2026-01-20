@@ -9,3 +9,4 @@ google-generativeai
 pydantic-settings
 httpx
 python-multipart
+jinja2

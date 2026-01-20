@@ -17,6 +17,7 @@ from common.database import get_session, async_session_factory
 from common.redis_client import redis_client
 from .scouts import SCOUTS
 from .utils import extract_platform_id
+from datetime import datetime, timedelta
 
 # Logging configuration
 logging.basicConfig(
@@ -26,6 +27,11 @@ logging.basicConfig(
 logger = logging.getLogger("watchtower")
 
 app = FastAPI(title="Immo-Bé Watchtower - Truth Engine Sentinel")
+
+# Scout state and safety locks
+scout_lock = asyncio.Lock()
+last_run_time = None
+last_run_new_count = 0
 
 # Templates configuration
 # Resolve templates path relative to this file
@@ -53,9 +59,10 @@ class DetectRequest(BaseModel):
     platform_id: str
     platform_name: str
 
-async def process_detection(url: str, platform_id: str, platform_name: str, session: AsyncSession):
+async def process_detection(url: str, platform_id: str, platform_name: str, session: AsyncSession) -> bool:
     """
     Core logic to check if a listing exists, create it if not, and push to queue.
+    Returns True if a new listing was created, False otherwise.
     """
     statement = select(Listing).where(Listing.source_id == platform_id)
     result = await session.execute(statement)
@@ -63,7 +70,7 @@ async def process_detection(url: str, platform_id: str, platform_name: str, sess
 
     if existing_listing:
         logger.info(f"Listing {platform_id} already exists in database (ID: {existing_listing.id}).")
-        return {"message": "Already known", "listing_id": existing_listing.id}
+        return False
 
     # Create new Listing entry
     new_listing = Listing(
@@ -90,10 +97,7 @@ async def process_detection(url: str, platform_id: str, platform_name: str, sess
     await redis_client.push_to_queue("scrape_queue", payload)
     logger.info(f"URL {new_listing.url} pushed to Redis 'scrape_queue'")
 
-    return {
-        "message": "Detected and queued",
-        "listing_id": new_listing.id
-    }
+    return True
 
 @app.post("/detect")
 async def detect(request: DetectRequest, session: AsyncSession = Depends(get_session)):
@@ -102,15 +106,20 @@ async def detect(request: DetectRequest, session: AsyncSession = Depends(get_ses
     """
     logger.info(f"Detection request received: {request.platform_id} on {request.platform_name}")
     try:
-        return await process_detection(request.url, request.platform_id, request.platform_name, session)
+        created = await process_detection(request.url, request.platform_id, request.platform_name, session)
+        if created:
+            return {"message": "Detected and queued"}
+        else:
+            return {"message": "Already known"}
     except Exception as e:
         logger.error(f"Error during detection: {str(e)}")
         await session.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-async def process_scout_page(platform: str, scout: dict, html: str):
+async def process_scout_page(platform: str, scout: dict, html: str) -> int:
     """
     Extract links and IDs from a scout page and process them.
+    Returns the number of new listings found.
     """
     # Extract links using Regex
     links = re.findall(scout["link_pattern"], html)
@@ -118,6 +127,7 @@ async def process_scout_page(platform: str, scout: dict, html: str):
     
     logger.info(f"Found {len(unique_links)} potential links on {platform}")
 
+    new_count = 0
     for url in unique_links:
         # Extract platform_id from URL using our utility
         platform_id = extract_platform_id(platform, url, scout["id_pattern"])
@@ -125,42 +135,67 @@ async def process_scout_page(platform: str, scout: dict, html: str):
         if platform_id:
             # Process each link (using a fresh session)
             async with async_session_factory() as session:
-                await process_detection(url, platform_id, platform, session)
+                created = await process_detection(url, platform_id, platform, session)
+                if created:
+                    new_count += 1
         else:
             logger.warning(f"Could not extract ID from URL: {url} (Platform: {platform})")
+    
+    return new_count
 
-async def run_scouts():
+async def run_scouts(ignore_cooldown: bool = False):
     """
     Scan all defined scouts for new listings.
+    Enforces a cooldown for automatic runs but allows manual override.
+    Always prevents concurrent runs.
     """
-    logger.info("Starting scouts scan...")
+    global last_run_time, last_run_new_count
     
-    for platform, scout in SCOUTS.items():
-        # Use a fresh client per platform to avoid session/cookie tracking issues
-        async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=30.0) as client:
-            search_urls = scout.get("search_urls", [scout.get("search_url")])
-            
-            for url in search_urls:
-                if not url:
-                    continue
-                try:
-                    logger.info(f"Scanning {platform} at {url}...")
-                    response = await client.get(url)
-                    
-                    if response.status_code == 403:
-                        logger.error(f"Access denied (403) for {platform} at {url}. Anti-bot triggered.")
+    if scout_lock.locked():
+        logger.warning("Scout scan already in progress. Ignoring request.")
+        return
+
+    async with scout_lock:
+        now = datetime.now()
+        
+        # Cooldown check only if not ignored (manual run)
+        if not ignore_cooldown and last_run_time and (now - last_run_time) < timedelta(minutes=55):
+            wait_time = timedelta(minutes=60) - (now - last_run_time)
+            logger.warning(f"Cooldown active. Please wait {wait_time.total_seconds() / 60:.1f} minutes.")
+            return
+
+        logger.info(f"Starting scouts scan... {'(Manual override)' if ignore_cooldown else ''}")
+        last_run_time = now
+        total_new = 0
+        
+        for platform, scout in SCOUTS.items():
+            # Use a fresh client per platform to avoid session/cookie tracking issues
+            async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=30.0) as client:
+                search_urls = scout.get("search_urls", [scout.get("search_url")])
+                
+                for url in search_urls:
+                    if not url:
                         continue
+                    try:
+                        logger.info(f"Scanning {platform} at {url}...")
+                        response = await client.get(url)
                         
-                    response.raise_for_status()
-                    await process_scout_page(platform, scout, response.text)
-                    
-                    # Small random delay between URLs of the same platform
-                    await asyncio.sleep(2.0)
+                        if response.status_code == 403:
+                            logger.error(f"Access denied (403) for {platform} at {url}. Anti-bot triggered.")
+                            continue
+                            
+                        response.raise_for_status()
+                        new_on_page = await process_scout_page(platform, scout, response.text)
+                        total_new += new_on_page
+                        
+                        # Small random delay between URLs of the same platform
+                        await asyncio.sleep(2.0)
 
-                except Exception as e:
-                    logger.error(f"Error scanning {platform} at {url}: {str(e)}")
+                    except Exception as e:
+                        logger.error(f"Error scanning {platform} at {url}: {str(e)}")
 
-    logger.info("Scouts scan completed.")
+        last_run_new_count = total_new
+        logger.info(f"Scouts scan completed. {total_new} new listings found.")
 
 async def scouts_loop():
     """
@@ -202,27 +237,42 @@ async def all_listings_view(request: Request, session: AsyncSession = Depends(ge
 
 @app.get("/ui/stats")
 async def ui_stats(session: AsyncSession = Depends(get_session)):
+    global last_run_time, last_run_new_count
+    
     # Total listings
-    total_stmt = select(func.count()).select_from(Listing)
-    total_res = await session.execute(total_stmt)
-    total_count = total_res.scalar() or 0
+    try:
+        total_stmt = select(func.count()).select_from(Listing)
+        total_res = await session.execute(total_stmt)
+        total_count = total_res.scalar() or 0
+    except Exception as e:
+        logger.error(f"Error fetching total count: {e}")
+        total_count = "Error"
     
     # Queue length from Redis
     try:
         if not redis_client.client:
             await redis_client.connect()
         queue_len = await redis_client.client.llen("scrape_queue")
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error fetching redis queue: {e}")
         queue_len = "?"
 
+    # Last scan info
+    last_scan_str = last_run_time.strftime('%H:%M:%S') if last_run_time else "Jamais"
+    new_found = last_run_new_count if last_run_time else 0
+
     return HTMLResponse(content=f"""
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200" id="stat-total-container" hx-swap-oob="true">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <p class="text-sm font-medium text-slate-500 uppercase">Annonces Totales</p>
             <p class="text-3xl font-bold">{total_count}</p>
         </div>
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200" id="stat-queue-container" hx-swap-oob="true">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <p class="text-sm font-medium text-slate-500 uppercase">File d'attente Scrape</p>
             <p class="text-3xl font-bold text-indigo-600">{queue_len}</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <p class="text-sm font-medium text-slate-500 uppercase">Dernier Scan</p>
+            <p class="text-lg font-semibold">{last_scan_str} <span class="text-xs font-normal text-slate-400">({new_found} trouvés)</span></p>
         </div>
     """)
 
@@ -269,9 +319,12 @@ async def ui_manual_detect(url: str = Form(...), session: AsyncSession = Depends
 
 @app.post("/ui/run-scouts")
 async def ui_run_scouts():
-    # Run scouts in background
-    asyncio.create_task(run_scouts())
-    return HTMLResponse(content='<p class="text-green-600 font-bold animate-bounce">📡 Scan lancé en arrière-plan...</p>')
+    if scout_lock.locked():
+        return HTMLResponse(content='<p class="text-amber-600 font-bold">⚠️ Scan déjà en cours...</p>')
+    
+    # Manual run ignores cooldown
+    asyncio.create_task(run_scouts(ignore_cooldown=True))
+    return HTMLResponse(content='<p class="text-green-600 font-bold animate-bounce">📡 Scan lancé manuellement...</p>')
 
 @app.post("/ui/clear-listings")
 async def ui_clear_listings(session: AsyncSession = Depends(get_session)):
@@ -282,7 +335,17 @@ async def ui_clear_listings(session: AsyncSession = Depends(get_session)):
         await session.commit()
         return HTMLResponse(content=f'<p class="text-amber-600 font-bold text-xs uppercase tracking-widest">🗑️ {result.rowcount} annonces supprimées.</p>')
     except Exception as e:
-        return HTMLResponse(content=f'<p class="text-red-600 font-bold text-xs">❌ Erreur: {str(e)}</p>')
+        return HTMLResponse(content=f'<p class="text-red-600 font-bold text-xs">❌ Erreur DB: {str(e)}</p>')
+
+@app.post("/ui/clear-redis")
+async def ui_clear_redis():
+    try:
+        if not redis_client.client:
+            await redis_client.connect()
+        await redis_client.client.delete("scrape_queue")
+        return HTMLResponse(content='<p class="text-amber-600 font-bold text-xs uppercase tracking-widest">🧹 File Redis vidée.</p>')
+    except Exception as e:
+        return HTMLResponse(content=f'<p class="text-red-600 font-bold text-xs">❌ Erreur Redis: {str(e)}</p>')
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

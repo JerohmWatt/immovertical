@@ -24,18 +24,18 @@
 
     <main class="container mx-auto p-6 space-y-8">
         <!-- Stats Section -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" hx-get="/ui/stats" hx-trigger="load, every 5s">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="stats-grid" hx-get="/ui/stats" hx-trigger="load, every 5s">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <p class="text-sm font-medium text-slate-500 uppercase">Annonces Totales</p>
-                <p class="text-3xl font-bold" id="stat-total">-</p>
+                <p class="text-3xl font-bold">-</p>
             </div>
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <p class="text-sm font-medium text-slate-500 uppercase">File d'attente Scrape</p>
-                <p class="text-3xl font-bold text-indigo-600" id="stat-queue">-</p>
+                <p class="text-3xl font-bold text-indigo-600">-</p>
             </div>
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p class="text-sm font-medium text-slate-500 uppercase">Dernière Scan</p>
-                <p class="text-lg font-semibold" id="stat-last-scan">En attente...</p>
+                <p class="text-sm font-medium text-slate-500 uppercase">Dernier Scan</p>
+                <p class="text-lg font-semibold">En attente...</p>
             </div>
         </div>
 
@@ -73,14 +73,20 @@
         <div class="bg-red-50 p-6 rounded-2xl border border-red-100 flex justify-between items-center">
             <div class="space-y-1">
                 <h3 class="text-red-900 font-bold">Zone de Danger</h3>
-                <p class="text-red-700 text-xs">Supprimer définitivement toutes les détections de la base de données.</p>
+                <p class="text-red-700 text-xs">Gestion du nettoyage des données de test.</p>
             </div>
             <div class="flex items-center space-x-4">
                 <div id="clear-result"></div>
-                <button hx-post="/ui/clear-listings" 
-                        hx-confirm="Êtes-vous sûr de vouloir supprimer TOUTES les détections ?"
+                <button hx-post="/ui/clear-redis" 
+                        hx-confirm="Vider la file d'attente Redis ?"
                         hx-target="#clear-result"
-                        class="bg-red-600 text-white font-bold px-6 py-2.5 rounded-lg hover:bg-red-700 transition shadow-sm text-sm">
+                        class="bg-amber-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-amber-700 transition shadow-sm text-xs">
+                    Vider Redis
+                </button>
+                <button hx-post="/ui/clear-listings" 
+                        hx-confirm="Supprimer TOUTES les annonces de la base ?"
+                        hx-target="#clear-result"
+                        class="bg-red-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-red-700 transition shadow-sm text-xs">
                     Vider la Base
                 </button>
             </div>

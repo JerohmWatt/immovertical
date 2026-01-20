@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Base de données spatiale (Lambert 72 ready)
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: immobe_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Broker de messages (La file d'attente)
+  redis:
+    image: redis:7-alpine
+    container_name: immobe_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # Phase 1: La Tour de Guet
+  watchtower:
+    build: 
+      context: .
+      dockerfile: apps/watchtower/Dockerfile
+    container_name: immobe_watchtower
+    restart: always
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/watchtower:/app
+      - ./common:/app/common # Partage des modèles
+    command: uvicorn apps.watchtower.src.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:

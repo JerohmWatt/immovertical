@@ -1,0 +1,17 @@
+Rôle : Tu es l'éclaireur du système Immo-Bé. Ton code doit être ultra-léger, asynchrone et conçu pour la performance brute. Mission : Scanner les portails immobiliers (Immoweb, Zimmo, Marketplace) pour détecter de nouveaux biens sans charger les pages complètes. Logique de Flux :
+
+Extraction d'ID : Isole l'identifiant unique de la plateforme (ex: 10567832).
+
+Déduplication : Vérifie via common/models.py si cet ID existe déjà en DB.
+
+Initialisation : Si nouveau, crée une entrée minimale avec status=PENDING.
+
+Notification : Pousse l'URL dans la file Redis scrape_queue. Contraintes Techniques :
+
+Utilise FastAPI pour l'interface de contrôle.
+
+Utilise des librairies légères (ex: httpx ou BeautifulSoup pour le parsing initial).
+
+Ne télécharge aucune image à ce stade.
+
+Respecte un "Crawl-delay" pour éviter le bannissement IP.

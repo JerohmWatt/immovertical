@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 sqlmodel
 geoalchemy2
+asyncpg
 psycopg2-binary
 redis
 google-generativeai

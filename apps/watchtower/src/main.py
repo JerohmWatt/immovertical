@@ -2,6 +2,7 @@ import logging
 import asyncio
 import re
 import httpx
+import json
 from fastapi import FastAPI, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -41,17 +42,13 @@ templates = Jinja2Templates(directory=templates_dir)
 # Browser-like headers
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept": "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
     "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Origin": "https://www.century21.be",
+    "Referer": "https://www.century21.be/",
     "Accept-Encoding": "gzip, deflate, br",
     "DNT": "1",
     "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0",
 }
 
 class DetectRequest(BaseModel):
@@ -116,30 +113,53 @@ async def detect(request: DetectRequest, session: AsyncSession = Depends(get_ses
         await session.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-async def process_scout_page(platform: str, scout: dict, html: str) -> int:
+async def process_scout_page(platform: str, scout: dict, content: str) -> int:
     """
-    Extract links and IDs from a scout page and process them.
+    Extract links and IDs from a scout page (HTML or JSON) and process them.
     Returns the number of new listings found.
     """
-    # Extract links using Regex
-    links = re.findall(scout["link_pattern"], html)
-    unique_links = list(set(links))
-    
-    logger.info(f"Found {len(unique_links)} potential links on {platform}")
-
     new_count = 0
-    for url in unique_links:
-        # Extract platform_id from URL using our utility
-        platform_id = extract_platform_id(platform, url, scout["id_pattern"])
+    
+    if scout.get("method") == "json":
+        try:
+            data = json.loads(content)
+            # Century 21 specific logic
+            if platform == "century21":
+                for item in data.get("data", []):
+                    platform_id = item.get("id")
+                    if not platform_id:
+                        continue
+                    
+                    # Construct URL (using their 'properiete' typo as observed in browser)
+                    city = item.get("address", {}).get("city", "belgium").lower().replace(" ", "-")
+                    url = f"https://www.century21.be/fr/properiete/a-vendre/maison/{city}/{platform_id}"
+                    
+                    async with async_session_factory() as session:
+                        created = await process_detection(url, platform_id, platform, session)
+                        if created:
+                            new_count += 1
+            else:
+                logger.warning(f"JSON method not implemented for platform: {platform}")
+        except Exception as e:
+            logger.error(f"Error parsing JSON for {platform}: {str(e)}")
+            
+    else:
+        # Default Regex method (Immoweb)
+        links = re.findall(scout["link_pattern"], content)
+        unique_links = list(set(links))
         
-        if platform_id:
-            # Process each link (using a fresh session)
-            async with async_session_factory() as session:
-                created = await process_detection(url, platform_id, platform, session)
-                if created:
-                    new_count += 1
-        else:
-            logger.warning(f"Could not extract ID from URL: {url} (Platform: {platform})")
+        logger.info(f"Found {len(unique_links)} potential links on {platform}")
+
+        for url in unique_links:
+            platform_id = extract_platform_id(platform, url, scout["id_pattern"])
+            
+            if platform_id:
+                async with async_session_factory() as session:
+                    created = await process_detection(url, platform_id, platform, session)
+                    if created:
+                        new_count += 1
+            else:
+                logger.warning(f"Could not extract ID from URL: {url} (Platform: {platform})")
     
     return new_count
 

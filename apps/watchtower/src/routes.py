@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ class DetectRequest(BaseModel):
     url: str
     platform_id: str
     platform_name: str
+    extra_data: Optional[Dict[str, Any]] = None
 
 @router.post("/detect")
 async def detect(request: DetectRequest, session: AsyncSession = Depends(get_session)):
@@ -30,7 +32,13 @@ async def detect(request: DetectRequest, session: AsyncSession = Depends(get_ses
     """
     logger.info(f"Detection request received: {request.platform_id} on {request.platform_name}")
     try:
-        created = await engine.process_detection(request.url, request.platform_id, request.platform_name, session)
+        created = await engine.process_detection(
+            request.url, 
+            request.platform_id, 
+            request.platform_name, 
+            session,
+            extra_data=request.extra_data
+        )
         if created:
             return {"message": "Detected and queued"}
         else:
@@ -52,6 +60,17 @@ async def all_listings_view(request: Request, session: AsyncSession = Depends(ge
     result = await session.execute(statement)
     listings = result.scalars().all()
     return templates.TemplateResponse("all_listings.html", {"request": request, "listings": listings})
+
+@router.get("/listing/{listing_id}", response_class=HTMLResponse)
+async def listing_details(listing_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    statement = select(Listing).where(Listing.id == listing_id)
+    result = await session.execute(statement)
+    listing = result.scalar_one_or_none()
+    
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+        
+    return templates.TemplateResponse("listing_details.html", {"request": request, "l": listing})
 
 @router.get("/ui/stats")
 async def ui_stats(session: AsyncSession = Depends(get_session)):
@@ -109,7 +128,10 @@ async def ui_listings(session: AsyncSession = Depends(get_session)):
                 <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase {status_color}">{l.status}</span>
             </td>
             <td class="px-6 py-4">
-                <a href="{l.url}" target="_blank" class="text-indigo-600 hover:underline truncate block max-w-xs">🔗 Voir l'annonce</a>
+                <div class="flex items-center space-x-3">
+                    <a href="/listing/{l.id}" class="text-indigo-600 hover:text-indigo-800 font-bold text-xs bg-indigo-50 px-2 py-1 rounded">📄 Détails</a>
+                    <a href="{l.url}" target="_blank" class="text-slate-400 hover:text-indigo-600">🔗 Lien</a>
+                </div>
             </td>
             <td class="px-6 py-4 text-xs text-slate-500">{l.created_at.strftime('%H:%M:%S')}</td>
         </tr>

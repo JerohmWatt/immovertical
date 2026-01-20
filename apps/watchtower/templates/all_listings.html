@@ -68,9 +68,14 @@
                                 <div class="text-xs text-slate-400">{{ l.created_at.strftime('%H:%M:%S') }}</div>
                             </td>
                             <td class="px-8 py-4 text-right">
-                                <a href="{{ l.url }}" target="_blank" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 font-bold text-sm">
-                                    Voir 🔗
-                                </a>
+                                <div class="flex justify-end items-center space-x-3">
+                                    <a href="/listing/{{ l.id }}" class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition">
+                                        Détails 📄
+                                    </a>
+                                    <a href="{{ l.url }}" target="_blank" class="text-slate-400 hover:text-indigo-600 transition">
+                                        Lien 🔗
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}

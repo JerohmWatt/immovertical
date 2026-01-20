@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copie des requirements (à créer à la racine ou dans le dossier app)
-COPY requirements.txt .
+# Copie des requirements
+COPY apps/watchtower/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # On expose le port de FastAPI

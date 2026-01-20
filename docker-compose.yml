@@ -39,6 +39,7 @@ services:
     volumes:
       - ./apps/watchtower:/app
       - ./common:/app/common # Partage des modèles
+      - ./scripts:/app/scripts # Pour les tests et outils
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:

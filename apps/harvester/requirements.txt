@@ -1,0 +1,9 @@
+playwright==1.40.0
+redis==5.0.1
+sqlmodel==0.0.14
+asyncpg==0.29.0
+geoalchemy2==0.14.3
+psycopg2-binary==2.9.9
+pydantic-settings==2.1.0
+python-json-logger==2.0.7
+playwright-stealth==1.0.6

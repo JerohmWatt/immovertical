@@ -21,13 +21,11 @@ scout_lock = asyncio.Lock()
 last_run_time = None
 last_run_new_count = 0
 
-# Browser-like headers
+# Browser-like headers (Base)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
     "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Origin": "https://www.century21.be",
-    "Referer": "https://www.century21.be/",
     "Accept-Encoding": "gzip, deflate, br",
     "DNT": "1",
     "Connection": "keep-alive",
@@ -107,6 +105,7 @@ async def process_scout_page(platform: str, scout: dict, content: str) -> int:
     Returns the number of new listings found.
     """
     new_count = 0
+    processed_ids = set()
     
     if scout.get("method") == "json":
         try:
@@ -117,6 +116,8 @@ async def process_scout_page(platform: str, scout: dict, content: str) -> int:
                     platform_id = item.get("id")
                     if not platform_id:
                         continue
+                    
+                    processed_ids.add(platform_id)
                     
                     # Extract extra data safely and exhaustively
                     price_data = item.get("price") or {}
@@ -186,22 +187,91 @@ async def process_scout_page(platform: str, scout: dict, content: str) -> int:
             logger.error(f"Error parsing JSON for {platform}: {str(e)}")
             
     else:
-        # Default Regex method (Immoweb)
+        # Hybrid Method (JSON + Regex fallback)
+        if platform == "immoweb":
+            try:
+                # 1. Rich extraction from JSON in HTML
+                json_pattern = r":results='(\[.*?\])'"
+                match = re.search(json_pattern, content, re.DOTALL)
+                if not match:
+                    json_pattern = r':results="(\[.*?\])"'
+                    match = re.search(json_pattern, content, re.DOTALL)
+
+                if match:
+                    raw_json = match.group(1).replace("&quot;", '"')
+                    data = json.loads(raw_json)
+                    
+                    for item in data:
+                        platform_id = str(item.get("id"))
+                        if not platform_id:
+                            continue
+                        
+                        # Mark as processed to avoid double counting via regex
+                        processed_ids.add(platform_id)
+                            
+                        # Extract rich data
+                        prop = item.get("property", {})
+                        loc = prop.get("location", {})
+                        trans = item.get("transaction", {})
+                        sale = trans.get("sale", {})
+                        
+                        extra = {
+                            "price": sale.get("price"),
+                            "rooms": prop.get("bedroomCount"),
+                            "surface_habitable": prop.get("netHabitableSurface"),
+                            "surface_terrain": prop.get("landSurface"),
+                            "latitude": loc.get("latitude"),
+                            "longitude": loc.get("longitude"),
+                            "description": item.get("title"),
+                            "address": {
+                                "city": loc.get("locality"),
+                                "postal_code": loc.get("postalCode"),
+                                "street": loc.get("street"),
+                                "number": loc.get("number"),
+                                "region": loc.get("region"),
+                            },
+                            "energy_label": item.get("transaction", {}).get("certificates", {}).get("epcScore"),
+                            "type": prop.get("type"),
+                            "subtype": prop.get("subtype"),
+                        }
+                        
+                        media = item.get("media", {})
+                        images = media.get("pictures", [])
+                        if images:
+                            extra["images"] = [img.get("mediumUrl") or img.get("smallUrl") for img in images if isinstance(img, dict)]
+
+                        # Construct URL
+                        type_label = prop.get("type", "maison").lower()
+                        subtype_label = prop.get("subtype", "a-vendre").lower()
+                        locality = loc.get("locality", "belgique").lower().replace(" ", "-")
+                        postcode = loc.get("postalCode", "0000")
+                        url = f"https://www.immoweb.be/fr/annonce/{type_label}/{subtype_label}/{locality}/{postcode}/{platform_id}"
+                        
+                        async with async_session_factory() as session:
+                            created = await process_detection(url, platform_id, platform, session, extra_data=extra)
+                            if created:
+                                new_count += 1
+                    
+                    logger.info(f"JSON extraction for {platform} processed {len(data)} items.")
+                
+            except Exception as e:
+                logger.error(f"Error during {platform} rich extraction: {str(e)}")
+
+        # 2. Always fallback/complement with Regex to catch everything else
         links = re.findall(scout["link_pattern"], content)
         unique_links = list(set(links))
         
-        logger.info(f"Found {len(unique_links)} potential links on {platform}")
+        logger.info(f"Scanning {len(unique_links)} links via regex for {platform}")
 
         for url in unique_links:
             platform_id = extract_platform_id(platform, url, scout["id_pattern"])
             
-            if platform_id:
+            # Process only if not already handled by JSON extraction
+            if platform_id and platform_id not in processed_ids:
                 async with async_session_factory() as session:
                     created = await process_detection(url, platform_id, platform, session)
                     if created:
                         new_count += 1
-            else:
-                logger.warning(f"Could not extract ID from URL: {url} (Platform: {platform})")
     
     return new_count
 
@@ -232,7 +302,17 @@ async def run_scouts(ignore_cooldown: bool = False):
         
         for platform, scout in SCOUTS.items():
             # Use a fresh client per platform to avoid session/cookie tracking issues
-            async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=30.0) as client:
+            platform_headers = HEADERS.copy()
+            if platform == "century21":
+                platform_headers["Origin"] = "https://www.century21.be"
+                platform_headers["Referer"] = "https://www.century21.be/"
+            elif platform == "immoweb":
+                platform_headers["Origin"] = "https://www.immoweb.be"
+                platform_headers["Referer"] = "https://www.immoweb.be/"
+                # Immoweb is sensitive to Accept header
+                platform_headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+
+            async with httpx.AsyncClient(headers=platform_headers, follow_redirects=True, timeout=30.0) as client:
                 search_urls = scout.get("search_urls", [])
                 
                 # Special handling for Century 21 dynamic filter

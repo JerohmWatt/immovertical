@@ -42,5 +42,22 @@ services:
       - ./scripts:/app/scripts # Pour les tests et outils
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # Phase 2: Le Moissonneur (Harvester)
+  harvester:
+    build: 
+      context: .
+      dockerfile: apps/harvester/Dockerfile
+    container_name: immobe_harvester
+    restart: always
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./apps/harvester:/app
+      - ./common:/app/common
+      - ./data/images:/app/data/images
+    command: python -m src.main
+
 volumes:
   postgres_data:

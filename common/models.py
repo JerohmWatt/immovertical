@@ -2,69 +2,80 @@ from typing import Optional, Dict, Any, List
 from decimal import Decimal
 from datetime import datetime
 from sqlmodel import SQLModel, Field, JSON, Column, DateTime
-from sqlalchemy import Float, Boolean, String, text
+from sqlalchemy import Float, Boolean, String, text, Integer
 from geoalchemy2 import Geometry
 import json
 
 class Listing(SQLModel, table=True):
     """
     Core Listing model for the 'Truth Engine'.
-    Stored in Lambert 72 (EPSG:31370).
     """
     id: Optional[int] = Field(default=None, primary_key=True)
     
     # Identification
-    source_id: str = Field(index=True, description="Unique platform ID (e.g. 10567832)")
+    source_id: str = Field(index=True, description="Unique platform ID")
     platform: str = Field(index=True, description="immoweb, zimmo, etc.")
     url: Optional[str] = Field(default=None)
     
-    # Status & Workflow Flags
+    # Workflow
     status: str = Field(default="PENDING", index=True)
     is_scraped: bool = Field(default=False)
-    is_enriched: bool = Field(default=False)
-    math_computed: bool = Field(default=False)
-    ai_audited: bool = Field(default=False)
     
-    # Raw Data Ingestion (WGS84 for Harvester compatibility)
+    # Localisation
     latitude: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
     longitude: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
+    city: Optional[str] = Field(default=None, index=True)
+    postal_code: Optional[str] = Field(default=None, index=True)
     
-    # Spatial Data (Lambert 72 - EPSG:31370 as mandated by .cursorrules)
-    # This is the 'Truth' location
-    geom: Any = Field(
-        default=None, 
-        sa_column=Column(Geometry(geometry_type="POINT", srid=31370, spatial_index=True))
-    )
-    
-    # Property Details
+    # Caractéristiques principales
+    property_type: Optional[str] = Field(default=None, index=True) # HOUSE, APARTMENT
+    property_subtype: Optional[str] = Field(default=None)
     price: Optional[Decimal] = Field(default=None, max_digits=14, decimal_places=2)
+    
+    # Financial details
+    cadastral_income: Optional[int] = None
+    is_public_sale: bool = Field(default=False)
+    is_viager: bool = Field(default=False)
+    annuity_bouquet: Optional[Decimal] = Field(default=None, max_digits=14, decimal_places=2)
+    annuity_monthly: Optional[Decimal] = Field(default=None, max_digits=14, decimal_places=2)
+    
+    # Détails techniques
     surface_habitable: Optional[int] = None
     surface_terrain: Optional[int] = None
-    rooms: Optional[int] = None
-    description: Optional[str] = None
+    rooms: Optional[int] = None # Bedrooms
+    room_count: Optional[int] = None # Total rooms
+    bathrooms: Optional[int] = None
+    toilet_count: Optional[int] = None
+    facades: Optional[int] = None
+    floor: Optional[int] = None
+    garden_surface: Optional[int] = None
+    terrace_surface: Optional[int] = None
+    kitchen_type: Optional[str] = None
     
-    # Flexible Storage for Images and Raw Attributes
+    # State & Construction
+    construction_year: Optional[int] = None
+    renovation_year: Optional[int] = None
+    condition: Optional[str] = None # AS_NEW, GOOD, TO_RENOVATE
+    heating_type: Optional[str] = None
+    is_furnished: bool = Field(default=False)
+    
+    # Énergie
+    energy_class: Optional[str] = Field(default=None, index=True) # A, B, C...
+    epc_score: Optional[int] = None # kWh/m²
+    epc_reference: Optional[str] = None
+    co2_emissions: Optional[int] = None
+    
+    # Contenu
+    description: Optional[str] = None
     images: List[str] = Field(default=[], sa_column=Column(JSON))
+    
+    # Stockage JSON complet (pour ne rien perdre)
     raw_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     
-    # Analysis Metrics
-    math_metrics: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    ai_analysis: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    trust_score: Optional[int] = Field(default=None, ge=0, le=100)
-    
-    # Timestamps
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(DateTime(timezone=True), server_default=text("now()"))
-    )
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(
-            DateTime(timezone=True), 
-            server_default=text("now()"), 
-            onupdate=text("now()")
-        )
-    )
+    # Métriques et erreurs
+    last_error: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime(timezone=True), server_default=text("now()")))
+    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=Column(DateTime(timezone=True), server_default=text("now()"), onupdate=text("now()")))
 
     class Config:
         arbitrary_types_allowed = True

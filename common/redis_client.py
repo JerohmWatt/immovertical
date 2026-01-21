@@ -57,6 +57,26 @@ class RedisClient:
             return json.loads(data)
         return None
 
+    async def get_queue_items(self, queue_name: str, start: int = 0, end: int = -1) -> list[Any]:
+        """
+        Get items from a list (queue) without popping them.
+        """
+        if not self.client:
+            await self.connect()
+        
+        items = await self.client.lrange(queue_name, start, end)
+        return [json.loads(i) for i in items]
+
+    async def remove_from_queue(self, queue_name: str, data: Any) -> int:
+        """
+        Remove a specific item from the queue.
+        """
+        if not self.client:
+            await self.connect()
+        
+        payload = json.dumps(data)
+        return await self.client.lrem(queue_name, 0, payload)
+
     async def set_cache(self, key: str, value: Any, expire: int = 3600) -> bool:
         """Set a value in cache with an expiration time (seconds)."""
         if not self.client:

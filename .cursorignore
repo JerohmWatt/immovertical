@@ -1,0 +1,116 @@
+﻿# Cache et fichiers compilÃ©s Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+*.pyc
+*.pyo
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pypackages__/
+
+# Fichiers de build et distribution
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Fichiers de donnÃ©es volumineux (images, HTML de debug)
+data/images/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+
+# Logs et fichiers temporaires
+*.log
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Fichiers de configuration systÃ¨me
+.env
+.env.local
+.env.*.local
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Fichiers IDE et Ã©diteurs
+.vscode/
+.idea/
+*.code-workspace
+.cursor/
+
+# Fichiers Docker volumineux (garder Dockerfile mais pas les images)
+*.tar
+*.tar.gz
+docker-compose.override.yml
+
+# Fichiers de base de donnÃ©es
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# Fichiers de lock (poetry, pipenv, etc.)
+poetry.lock
+Pipfile.lock
+pdm.lock
+
+# Fichiers de test et coverage
+.pytest_cache/
+.hypothesis/
+nosetests.xml
+.coverage.*
+cover/
+
+# Fichiers de type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# Fichiers Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Fichiers de dÃ©ploiement
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Fichiers de backup
+*.bak
+*.backup
+*~

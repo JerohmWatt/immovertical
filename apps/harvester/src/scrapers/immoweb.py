@@ -51,7 +51,7 @@ class ImmowebScraper(BaseScraper):
         annuity = sale.get("annuity", {}) or {}
         
         # Gestion spéciale Prix (Viager, Public Sale, etc.)
-        price = sale.get("price") or (data.get("price", {}) or {}).get("mainValue")
+        price = sale.get("price") or (data.get("price") or {}).get("mainValue")
         
         return UniversalListing(
             source_platform="immoweb",
@@ -61,29 +61,29 @@ class ImmowebScraper(BaseScraper):
             description=p.get("description"),
             property_type=p.get("type"),
             property_subtype=p.get("subtype"),
-            image_urls=[pic["largeUrl"] for pic in data.get("media", {}).get("pictures", []) if "largeUrl" in pic],
+            image_urls=[pic["largeUrl"] for pic in (data.get("media") or {}).get("pictures", []) if pic and isinstance(pic, dict) and "largeUrl" in pic],
             financial=FinancialData(
                 price=price,
                 cadastral_income=sale.get("cadastralIncome"),
-                is_public_sale=t.get("isPublicSale", False),
-                is_viager=sale.get("isViager", False),
+                is_public_sale=bool(t.get("isPublicSale")),
+                is_viager=bool(sale.get("isViager")),
                 annuity_bouquet=annuity.get("bouquet"),
                 annuity_monthly=annuity.get("monthlyAmount")
             ),
             spatial=SpatialData(
                 habitable_surface=p.get("netHabitableSurface"),
-                land_surface=p.get("land", {}).get("surface") or p.get("landSurface"),
+                land_surface=(p.get("land") or {}).get("surface") or p.get("landSurface"),
                 bedroom_count=p.get("bedroomCount"),
                 bathroom_count=p.get("bathroomCount"),
                 toilet_count=p.get("toiletCount"),
                 room_count=p.get("roomCount"),
                 kitchen_type=(p.get("kitchen") or {}).get("type"),
-                has_garden=p.get("hasGarden", False),
+                has_garden=bool(p.get("hasGarden")),
                 garden_surface=p.get("gardenSurface"),
-                has_terrace=p.get("hasTerrace", False),
+                has_terrace=bool(p.get("hasTerrace")),
                 terrace_surface=p.get("terraceSurface"),
                 floor=p.get("floor"),
-                facade_count=b.get("facadeCount")
+                facade_count=(b.get("facadeCount"))
             ),
             energy=EnergyData(
                 epc_score=cert.get("primaryEnergyConsumptionPerSqm"),
@@ -97,7 +97,7 @@ class ImmowebScraper(BaseScraper):
                 renovation_year=b.get("renovationYear"),
                 condition=b.get("condition"),
                 heating_type=energy.get("heatingType"),
-                is_furnished=sale.get("isFurnished", False)
+                is_furnished=bool(sale.get("isFurnished"))
             ),
             location=LocationData(
                 street=loc.get("street"),

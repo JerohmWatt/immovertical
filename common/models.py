@@ -20,10 +20,19 @@ class Listing(SQLModel, table=True):
     # Workflow
     status: str = Field(default="PENDING", index=True)
     is_scraped: bool = Field(default=False)
+    is_enriched: bool = Field(default=False)
+    math_computed: bool = Field(default=False)
+    ai_audited: bool = Field(default=False)
     
     # Localisation
     latitude: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
     longitude: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
+    
+    # Spatial Data (Lambert 72 - EPSG:31370)
+    geom: Optional[Any] = Field(
+        default=None, 
+        sa_column=Column(Geometry(geometry_type="POINT", srid=31370, spatial_index=True))
+    )
     city: Optional[str] = Field(default=None, index=True)
     postal_code: Optional[str] = Field(default=None, index=True)
     
@@ -71,6 +80,11 @@ class Listing(SQLModel, table=True):
     
     # Stockage JSON complet (pour ne rien perdre)
     raw_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    
+    # Analysis Metrics
+    math_metrics: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    ai_analysis: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    trust_score: Optional[int] = Field(default=None, ge=0, le=100)
     
     # Métriques et erreurs
     last_error: Optional[str] = Field(default=None)

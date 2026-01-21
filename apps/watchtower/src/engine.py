@@ -4,11 +4,12 @@ import re
 import httpx
 import json
 import base64
+import time
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from common.models import Listing
+from common.models import Listing, ScanHistory
 from common.database import async_session_factory
 from common.redis_client import redis_client
 from .scouts import SCOUTS
@@ -299,8 +300,14 @@ async def run_scouts(ignore_cooldown: bool = False):
         logger.info(f"Starting scouts scan... {'(Manual override)' if ignore_cooldown else ''}")
         last_run_time = now
         total_new = 0
+        batch_id = now.strftime("%Y%m%d%H%M%S") # Unique ID for this run
         
         for platform, scout in SCOUTS.items():
+            start_platform_time = time.time()
+            platform_new_count = 0
+            status = "SUCCESS"
+            error_msg = None
+
             # Use a fresh client per platform to avoid session/cookie tracking issues
             platform_headers = HEADERS.copy()
             if platform == "century21":
@@ -312,69 +319,94 @@ async def run_scouts(ignore_cooldown: bool = False):
                 # Immoweb is sensitive to Accept header
                 platform_headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
 
-            async with httpx.AsyncClient(headers=platform_headers, follow_redirects=True, timeout=30.0) as client:
-                search_urls = scout.get("search_urls", [])
-                
-                # Special handling for Century 21 dynamic filter
-                if platform == "century21":
-                    # Generate dynamic filter for "yesterday" (la veille)
-                    yesterday = datetime.now() - timedelta(days=1)
-                    iso_date = yesterday.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            try:
+                async with httpx.AsyncClient(headers=platform_headers, follow_redirects=True, timeout=30.0) as client:
+                    search_urls = scout.get("search_urls", [])
                     
-                    c21_filter = {
-                        "bool": {
-                            "filter": {
-                                "bool": {
-                                    "must": [
-                                        {"bool": {"should": [
-                                            {"match": {"address.countryCode": "be"}},
-                                            {"match": {"address.countryCode": "fr"}},
-                                            {"match": {"address.countryCode": "it"}},
-                                            {"match": {"address.countryCode": "lu"}}
-                                        ]}},
-                                        {"match": {"listingType": "FOR_SALE"}},
-                                        {"range": {"price.amount": {"lte": 300000}}},
-                                        {"bool": {"should": {"match": {"type": "HOUSE"}}}},
-                                        {"range": {"creationDate": {"lte": iso_date}}}
-                                    ]
+                    # Special handling for Century 21 dynamic filter
+                    if platform == "century21":
+                        # Generate dynamic filter for "yesterday" (la veille)
+                        yesterday = datetime.now() - timedelta(days=1)
+                        iso_date = yesterday.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                        
+                        c21_filter = {
+                            "bool": {
+                                "filter": {
+                                    "bool": {
+                                        "must": [
+                                            {"bool": {"should": [
+                                                {"match": {"address.countryCode": "be"}},
+                                                {"match": {"address.countryCode": "fr"}},
+                                                {"match": {"address.countryCode": "it"}},
+                                                {"match": {"address.countryCode": "lu"}}
+                                            ]}},
+                                            {"match": {"listingType": "FOR_SALE"}},
+                                            {"range": {"price.amount": {"lte": 300000}}},
+                                            {"bool": {"should": {"match": {"type": "HOUSE"}}}},
+                                            {"range": {"creationDate": {"lte": iso_date}}}
+                                        ]
+                                    }
                                 }
                             }
                         }
-                    }
-                    filter_b64 = base64.b64encode(json.dumps(c21_filter, separators=(',', ':')).encode()).decode()
-                    
-                    # Update the URL with the fresh filter
-                    base_api = "https://api.prd.cloud.century21.be/api/v2/properties"
-                    params = {
-                        "facets": "elevator,condition,floorNumber,garden,habitableSurfaceArea,listingType,numberOfBedrooms,parking,price,subType,surfaceAreaGarden,swimmingPool,terrace,totalSurfaceArea,type",
-                        "filter": filter_b64,
-                        "pageSize": "24",
-                        "sort": "-creationDate"
-                    }
-                    # Construct URL with params
-                    query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-                    search_urls = [f"{base_api}?{query_string}"]
-
-                for url in search_urls:
-                    if not url:
-                        continue
-                    try:
-                        logger.info(f"Scanning {platform} at {url}...")
-                        response = await client.get(url)
+                        filter_b64 = base64.b64encode(json.dumps(c21_filter, separators=(',', ':')).encode()).decode()
                         
-                        if response.status_code == 403:
-                            logger.error(f"Access denied (403) for {platform} at {url}. Anti-bot triggered.")
+                        # Update the URL with the fresh filter
+                        base_api = "https://api.prd.cloud.century21.be/api/v2/properties"
+                        params = {
+                            "facets": "elevator,condition,floorNumber,garden,habitableSurfaceArea,listingType,numberOfBedrooms,parking,price,subType,surfaceAreaGarden,swimmingPool,terrace,totalSurfaceArea,type",
+                            "filter": filter_b64,
+                            "pageSize": "24",
+                            "sort": "-creationDate"
+                        }
+                        # Construct URL with params
+                        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+                        search_urls = [f"{base_api}?{query_string}"]
+
+                    for url in search_urls:
+                        if not url:
                             continue
+                        try:
+                            logger.info(f"Scanning {platform} at {url}...")
+                            response = await client.get(url)
                             
-                        response.raise_for_status()
-                        new_on_page = await process_scout_page(platform, scout, response.text)
-                        total_new += new_on_page
-                        
-                        # Small random delay between URLs of the same platform
-                        await asyncio.sleep(2.0)
+                            if response.status_code == 403:
+                                logger.error(f"Access denied (403) for {platform} at {url}. Anti-bot triggered.")
+                                status = "FAILED"
+                                error_msg = "403 Forbidden"
+                                continue
+                                
+                            response.raise_for_status()
+                            new_on_page = await process_scout_page(platform, scout, response.text)
+                            platform_new_count += new_on_page
+                            total_new += new_on_page
+                            
+                            # Small random delay between URLs of the same platform
+                            await asyncio.sleep(2.0)
 
-                    except Exception as e:
-                        logger.error(f"Error scanning {platform} at {url}: {str(e)}")
+                        except Exception as e:
+                            logger.error(f"Error scanning {platform} at {url}: {str(e)}")
+                            status = "FAILED"
+                            error_msg = str(e)
+
+            except Exception as e:
+                logger.error(f"Critical error for {platform}: {str(e)}")
+                status = "FAILED"
+                error_msg = str(e)
+            finally:
+                # Record result for this platform in this batch
+                duration = time.time() - start_platform_time
+                async with async_session_factory() as session:
+                    history = ScanHistory(
+                        batch_id=batch_id,
+                        platform=platform,
+                        new_listings_count=platform_new_count,
+                        status=status,
+                        error_message=error_msg,
+                        duration_seconds=round(duration, 2)
+                    )
+                    session.add(history)
+                    await session.commit()
 
         last_run_new_count = total_new
         logger.info(f"Scouts scan completed. {total_new} new listings found.")

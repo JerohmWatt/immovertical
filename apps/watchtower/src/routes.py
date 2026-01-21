@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, desc, func
 from datetime import datetime
 
-from common.models import Listing
+from common.models import Listing, ScanHistory
 from common.database import get_session
 from common.redis_client import redis_client
 from .utils import extract_platform_id
@@ -71,6 +71,33 @@ async def listing_details(listing_id: int, request: Request, session: AsyncSessi
         raise HTTPException(status_code=404, detail="Listing not found")
         
     return templates.TemplateResponse("listing_details.html", {"request": request, "l": listing})
+
+@router.get("/history", response_class=HTMLResponse)
+async def scan_history_view(request: Request, session: AsyncSession = Depends(get_session)):
+    # Fetch last 100 entries
+    statement = select(ScanHistory).order_by(desc(ScanHistory.created_at)).limit(100)
+    result = await session.execute(statement)
+    entries = result.scalars().all()
+    
+    # Group by batch_id to show per-run results
+    history = {}
+    for e in entries:
+        bid = e.batch_id or "legacy"
+        if bid not in history:
+            history[bid] = {
+                "time": e.created_at,
+                "platforms": {}
+            }
+        history[bid]["platforms"][e.platform] = {
+            "count": e.new_listings_count,
+            "status": e.status,
+            "error": e.error_message
+        }
+    
+    # Sort history by time descending
+    sorted_history = sorted(history.values(), key=lambda x: x["time"], reverse=True)
+    
+    return templates.TemplateResponse("history.html", {"request": request, "history": sorted_history})
 
 @router.get("/ui/stats")
 async def ui_stats(session: AsyncSession = Depends(get_session)):

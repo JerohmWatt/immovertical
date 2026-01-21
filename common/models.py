@@ -68,3 +68,20 @@ class Listing(SQLModel, table=True):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class ScanHistory(SQLModel, table=True):
+    """
+    Audit log for chaque passage de scout.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    batch_id: str = Field(index=True, description="Identifiant unique du run (ex: timestamp)")
+    platform: str = Field(index=True)
+    new_listings_count: int = Field(default=0)
+    status: str = Field(default="SUCCESS") # SUCCESS, FAILED
+    error_message: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=text("now()"))
+    )

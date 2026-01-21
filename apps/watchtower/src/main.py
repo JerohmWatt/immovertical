@@ -5,6 +5,7 @@ import uvicorn
 
 from .routes import router
 from .engine import scouts_loop
+from common.database import init_db
 
 # Logging configuration
 logging.basicConfig(
@@ -23,6 +24,10 @@ async def startup_event():
     """
     Start the background scouts loop on app startup.
     """
+    # Initialize database tables
+    await init_db()
+    logger.info("Database initialized.")
+
     # Start the loop as a background task
     asyncio.create_task(scouts_loop())
     logger.info("Background scouts loop started.")

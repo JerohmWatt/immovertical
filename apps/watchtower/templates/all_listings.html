@@ -105,6 +105,15 @@
                             </td>
                             <td class="px-8 py-6 text-right">
                                 <div class="flex justify-end items-center gap-3">
+                                    {% if l.status in ["PENDING", "FAILED", "ERROR"] %}
+                                    <button hx-post="/ui/harvest-listing" 
+                                            hx-vals='{"listing_id": {{ l.id }}}'
+                                            hx-target="closest tr"
+                                            hx-swap="outerHTML"
+                                            class="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-black hover:bg-green-700 transition shadow-lg shadow-green-200 uppercase tracking-widest">
+                                        <i class="fa-solid fa-bolt mr-1"></i> Harvest
+                                    </button>
+                                    {% endif %}
                                     <a href="/listing/{{ l.id }}" class="bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-black hover:bg-indigo-600 transition shadow-lg shadow-slate-200 uppercase tracking-widest">
                                         Explorer
                                     </a>

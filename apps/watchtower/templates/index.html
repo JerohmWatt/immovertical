@@ -55,23 +55,23 @@
             </div>
 
             <!-- Scrape Queue List -->
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3 flex flex-col">
                 <div class="flex justify-between items-center">
                     <h2 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">⏳ File d'attente</h2>
                     <button hx-get="/ui/scrape-queue" hx-target="#scrape-queue-container" class="text-indigo-600 text-[9px] font-bold uppercase hover:underline">🔄</button>
                 </div>
-                <div id="scrape-queue-container" hx-get="/ui/scrape-queue" hx-trigger="load, every 10s" class="max-h-[180px] overflow-y-auto">
+                <div id="scrape-queue-container" hx-get="/ui/scrape-queue" hx-trigger="load, every 10s" class="flex-1 overflow-y-auto min-h-[180px]">
                     <p class="text-center text-slate-400 text-[10px] italic py-4">Chargement...</p>
                 </div>
             </div>
 
             <!-- Scraping Realtime Status -->
-            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3 lg:col-span-1">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3 lg:col-span-1 flex flex-col">
                 <div class="flex justify-between items-center">
                     <h2 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">📡 Live Scraper</h2>
                     <span class="flex h-2 w-2 rounded-full bg-indigo-500 animate-ping"></span>
                 </div>
-                <div id="scraping-status-container" hx-get="/ui/scraping-status" hx-trigger="load, every 3s" class="space-y-4">
+                <div id="scraping-status-container" hx-get="/ui/scraping-status" hx-trigger="load, every 3s" class="flex-1 overflow-y-auto min-h-[180px]">
                     <p class="text-center text-slate-400 text-[10px] italic py-4">Connexion...</p>
                 </div>
             </div>
@@ -116,7 +116,9 @@
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <h2 class="text-lg font-bold uppercase tracking-wider text-slate-600 text-sm">Dernières Détections</h2>
                 <div class="flex space-x-4">
-                    <a href="/history" class="text-indigo-600 text-sm font-bold hover:underline">📋 Historique Scans</a>
+                    <a href="/history" class="text-indigo-600 text-sm font-bold hover:underline">📋 Scouts</a>
+                    <a href="/harvest-history" class="text-green-600 text-sm font-bold hover:underline">📦 Harvests</a>
+                    <a href="/scout-urls" class="text-purple-600 text-sm font-bold hover:underline">🔍 URLs Scouts</a>
                     <button hx-get="/ui/listings" hx-target="#listings-table" class="text-indigo-600 text-sm font-bold hover:underline">Rafraîchir</button>
                     <a href="/all" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700 transition">Voir tout →</a>
                 </div>

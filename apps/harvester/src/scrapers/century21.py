@@ -52,10 +52,11 @@ class Century21Scraper(BaseScraper):
             raw_data = None
             
             # Pattern 1: __NEXT_DATA__
-            next_data_match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', content)
+            next_data_match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', content, re.DOTALL)
             if next_data_match:
                 try:
                     full_json = json.loads(next_data_match.group(1))
+                    self.logger.info("✅ Found __NEXT_DATA__")
                     props = full_json.get("props", {})
                     page_props = props.get("pageProps", {})
                     
@@ -65,8 +66,27 @@ class Century21Scraper(BaseScraper):
                         raw_data = page_props.get("initialState", {}).get("listing", {}).get("data")
                     if not raw_data:
                         raw_data = props.get("initialProps", {}).get("listing")
+                    if not raw_data:
+                        # Try dehydratedState (Next.js hydration)
+                        dehydrated = page_props.get("dehydratedState", {})
+                        queries = dehydrated.get("queries", [])
+                        for q in queries:
+                            if isinstance(q, dict):
+                                state_data = q.get("state", {})
+                                listing_data = state_data.get("data")
+                                if listing_data and isinstance(listing_data, dict):
+                                    raw_data = listing_data
+                                    break
+                    
+                    if raw_data:
+                        self.logger.info(f"✅ Extracted listing data with {len(raw_data)} keys")
+                    else:
+                        self.logger.warning(f"⚠️ Found __NEXT_DATA__ but no listing. Keys in pageProps: {list(page_props.keys())}")
+                        
                 except Exception as e:
                     self.logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
+            else:
+                self.logger.warning("⚠️ No __NEXT_DATA__ script tag found")
 
             if not raw_data:
                 # Pattern 2: Global variable fallback
@@ -74,12 +94,36 @@ class Century21Scraper(BaseScraper):
                 if match:
                     try:
                         raw_data = json.loads(match.group(1))
+                        self.logger.info("✅ Found window.__listing_data__")
                     except: pass
 
             if not raw_data:
+                # Pattern 3: Try to extract from window object via JS
+                try:
+                    raw_data = await page.evaluate("""() => {
+                        // Try window.__NEXT_DATA__
+                        if (window.__NEXT_DATA__) {
+                            const props = window.__NEXT_DATA__.props || {};
+                            const pageProps = props.pageProps || {};
+                            return pageProps.listing || pageProps.initialState?.listing?.data || props.initialProps?.listing;
+                        }
+                        // Try any global listing variable
+                        if (window.listing) return window.listing;
+                        if (window.__listing) return window.__listing;
+                        return null;
+                    }""")
+                    if raw_data:
+                        self.logger.info("✅ Extracted via window.evaluate")
+                except Exception as e:
+                    self.logger.warning(f"Failed to evaluate JS: {e}")
+
+            if not raw_data:
                 self.logger.error(f"Could not extract Century21 payload. Length: {len(content)}")
-                if len(content) < 5000:
-                    self.logger.debug(f"Full page content: {content}")
+                # Save HTML for debugging
+                if len(content) < 50000:
+                    with open("/tmp/c21_debug.html", "w", encoding="utf-8") as f:
+                        f.write(content)
+                    self.logger.info("💾 Saved debug HTML to /tmp/c21_debug.html")
                 return None
 
             return self._parse_payload(raw_data, url)
@@ -115,8 +159,8 @@ class Century21Scraper(BaseScraper):
             bedroom_count=data.get("bedroomCount"),
             bathroom_count=data.get("bathroomCount"),
             room_count=data.get("roomCount"),
-            has_garden=data.get("hasGarden", False),
-            has_terrace=data.get("hasTerrace", False),
+            has_garden=bool(data.get("hasGarden")),
+            has_terrace=bool(data.get("hasTerrace")),
             facade_count=data.get("facadeCount")
         )
 

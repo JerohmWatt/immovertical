@@ -31,22 +31,67 @@ async def get_browser_instance(p):
         except: continue
     return None
 
+async def queue_mover():
+    """
+    Background task to automatically move items from scrape_queue to active_scrape_queue
+    This ensures harvester always has work to do
+    """
+    while True:
+        try:
+            # Check if active queue is empty or has few items
+            active_len = await redis_client.client.llen("active_scrape_queue")
+            
+            # Keep active queue filled with up to 5 items
+            if active_len < 5:
+                items_to_move = 5 - active_len
+                for _ in range(items_to_move):
+                    # Move one item from scrape_queue to active_scrape_queue
+                    item = await redis_client.pop_from_queue("scrape_queue", timeout=0)
+                    if item:
+                        await redis_client.push_to_queue("active_scrape_queue", item)
+                        logger.info(f"📬 Moved to active queue: {item.get('platform')} - {item.get('url', 'N/A')[:50]}")
+                    else:
+                        break  # No more items in scrape_queue
+            
+            await asyncio.sleep(5)  # Check every 5 seconds
+        except Exception as e:
+            logger.error(f"Error in queue_mover: {e}")
+            await asyncio.sleep(10)
+
 async def main():
     logger.info("🚀 Harvester starting...")
     await redis_client.connect()
+    
+    # Queue mover is disabled - use manual trigger from UI only
+    # asyncio.create_task(queue_mover())
+    logger.info("📬 Manual mode: Use UI buttons to trigger scraping")
 
     async with async_playwright() as p:
-        browser = await get_browser_instance(p)
-        if not browser: return logger.error("❌ Chrome not found.")
-        
-        context = browser.contexts[0] if browser.contexts else await browser.new_context()
+        browser = None
+        context = None
         
         while True:
+            # Reconnect browser if needed
+            if not browser or not context:
+                try:
+                    logger.info("🔄 Connecting to Chrome...")
+                    browser = await get_browser_instance(p)
+                    if not browser:
+                        logger.error("❌ Chrome not found. Retrying in 10s...")
+                        await asyncio.sleep(10)
+                        continue
+                    context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                    logger.info("✅ Browser connected successfully")
+                except Exception as e:
+                    logger.error(f"Failed to connect browser: {e}")
+                    await asyncio.sleep(10)
+                    continue
+            
             task = await redis_client.pop_from_queue("active_scrape_queue", timeout=30)
             if not task: continue
 
             url, platform, listing_id = task.get("url"), task.get("platform"), task.get("listing_id")
-            logger.info(f"Processing {listing_id}...")
+            logger.info(f"🎯 Processing listing {listing_id} from {platform}...")
 
             try:
                 scraper = get_scraper(platform)
@@ -104,11 +149,38 @@ async def main():
                             
                             l.raw_data = result.model_dump(mode='json')
                             await session.commit()
-                            logger.info(f"✅ Listing {listing_id} fully enriched.")
+                            logger.info(f"✅ Listing {listing_id} fully enriched and saved")
+                        else:
+                            logger.error(f"❌ Listing {listing_id} not found in database")
                 else:
-                    logger.warning(f"⚠️ Failed to scrape {url}")
+                    logger.warning(f"⚠️ Scraper returned empty result for listing {listing_id}")
+                    # Mark as FAILED
+                    async with async_session_factory() as session:
+                        l = await session.get(Listing, listing_id)
+                        if l:
+                            l.status = "FAILED"
+                            await session.commit()
+                            
             except Exception as e:
-                logger.error(f"💥 Error: {e}")
+                error_msg = str(e)
+                logger.error(f"💥 Error processing listing {listing_id}: {error_msg}")
+                
+                # Mark listing as FAILED
+                try:
+                    async with async_session_factory() as session:
+                        l = await session.get(Listing, listing_id)
+                        if l:
+                            l.status = "ERROR"
+                            await session.commit()
+                            logger.info(f"Marked listing {listing_id} as ERROR")
+                except Exception as db_error:
+                    logger.error(f"Failed to update listing status: {db_error}")
+                
+                # If browser connection error, reset for reconnection
+                if "closed" in error_msg.lower() or "target" in error_msg.lower():
+                    logger.warning("🔌 Browser connection lost, will reconnect on next task")
+                    browser = None
+                    context = None
 
 if __name__ == "__main__":
     asyncio.run(main())

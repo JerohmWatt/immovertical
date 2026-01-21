@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historique Harvest | Immo-Bé Watchtower</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <nav class="bg-indigo-700 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-tight">🏰 IMMO-BÉ <span class="font-light text-indigo-200">Watchtower</span></h1>
+            <div class="flex items-center space-x-4">
+                <a href="/" class="text-sm hover:text-indigo-200 transition">← Dashboard</a>
+                <a href="/history" class="text-sm hover:text-indigo-200 transition">📋 Scouts</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6">
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-slate-800">📦 Historique des Harvests</h2>
+            <p class="text-slate-600 text-sm mt-1">Tous les scrapes effectués par le Harvester</p>
+        </div>
+
+        <!-- Stats rapides -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-xs font-medium text-slate-500 uppercase">Total Scrapés</p>
+                <p class="text-2xl font-bold text-green-600">{{ stats.total_scanned }}</p>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-xs font-medium text-slate-500 uppercase">Succès</p>
+                <p class="text-2xl font-bold text-green-600">{{ stats.success }}</p>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-xs font-medium text-slate-500 uppercase">Échecs</p>
+                <p class="text-2xl font-bold text-red-600">{{ stats.failed }}</p>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <p class="text-xs font-medium text-slate-500 uppercase">Taux de réussite</p>
+                <p class="text-2xl font-bold text-indigo-600">{{ stats.success_rate }}%</p>
+            </div>
+        </div>
+
+        <!-- Filtres -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
+            <form method="get" class="flex items-center space-x-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-600 uppercase">Plateforme</label>
+                    <select name="platform" class="ml-2 border border-slate-200 rounded px-3 py-1 text-sm">
+                        <option value="">Toutes</option>
+                        <option value="immoweb" {% if filter_platform == 'immoweb' %}selected{% endif %}>Immoweb</option>
+                        <option value="century21" {% if filter_platform == 'century21' %}selected{% endif %}>Century21</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 uppercase">Statut</label>
+                    <select name="status" class="ml-2 border border-slate-200 rounded px-3 py-1 text-sm">
+                        <option value="">Tous</option>
+                        <option value="SCANNED" {% if filter_status == 'SCANNED' %}selected{% endif %}>Succès</option>
+                        <option value="FAILED" {% if filter_status == 'FAILED' %}selected{% endif %}>Échec</option>
+                        <option value="ERROR" {% if filter_status == 'ERROR' %}selected{% endif %}>Erreur</option>
+                    </select>
+                </div>
+                <button type="submit" class="bg-indigo-600 text-white px-4 py-1 rounded font-bold text-sm hover:bg-indigo-700 transition">
+                    Filtrer
+                </button>
+                <a href="/harvest-history" class="text-slate-600 text-sm hover:text-indigo-600">Réinitialiser</a>
+            </form>
+        </div>
+
+        <!-- Table -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs font-bold uppercase">
+                            <th class="px-6 py-3">ID</th>
+                            <th class="px-6 py-3">Platform</th>
+                            <th class="px-6 py-3">Source ID</th>
+                            <th class="px-6 py-3">Status</th>
+                            <th class="px-6 py-3">Prix</th>
+                            <th class="px-6 py-3">Surface</th>
+                            <th class="px-6 py-3">Ville</th>
+                            <th class="px-6 py-3">Date Harvest</th>
+                            <th class="px-6 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for listing in listings %}
+                        <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition">
+                            <td class="px-6 py-4 font-mono text-xs text-slate-600">{{ listing.id }}</td>
+                            <td class="px-6 py-4">
+                                <span class="px-2 py-1 rounded text-xs font-bold {% if listing.platform == 'immoweb' %}bg-blue-100 text-blue-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                    {{ listing.platform }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 font-mono text-xs">{{ listing.source_id }}</td>
+                            <td class="px-6 py-4">
+                                {% if listing.status == 'SCANNED' %}
+                                <span class="px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">✓ {{ listing.status }}</span>
+                                {% elif listing.status in ['FAILED', 'ERROR'] %}
+                                <span class="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">✗ {{ listing.status }}</span>
+                                {% else %}
+                                <span class="px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">{{ listing.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-sm font-medium">
+                                {% if listing.price %}{{ listing.price }} €{% else %}-{% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-sm">
+                                {% if listing.surface_habitable %}{{ listing.surface_habitable }} m²{% else %}-{% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-sm">{{ listing.city or '-' }}</td>
+                            <td class="px-6 py-4 text-xs text-slate-500">
+                                {{ listing.updated_at.strftime('%d/%m/%Y %H:%M') if listing.updated_at else '-' }}
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="flex items-center space-x-2">
+                                    <a href="/listing/{{ listing.id }}" class="text-indigo-600 hover:text-indigo-800 font-bold text-xs">📄 Voir</a>
+                                    <a href="{{ listing.url }}" target="_blank" class="text-slate-400 hover:text-indigo-600 text-xs">🔗</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not listings %}
+                        <tr>
+                            <td colspan="9" class="px-6 py-12 text-center text-slate-400 italic">
+                                Aucun harvest trouvé avec ces critères.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="mt-6 flex justify-center items-center space-x-2">
+            {% if page > 1 %}
+            <a href="?page={{ page - 1 }}{% if filter_platform %}&platform={{ filter_platform }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}" 
+               class="px-3 py-1 bg-white border border-slate-200 rounded text-sm hover:bg-slate-50">← Précédent</a>
+            {% endif %}
+            
+            <span class="text-sm text-slate-600">Page {{ page }} sur {{ total_pages }}</span>
+            
+            {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}{% if filter_platform %}&platform={{ filter_platform }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}" 
+               class="px-3 py-1 bg-white border border-slate-200 rounded text-sm hover:bg-slate-50">Suivant →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </main>
+
+    <footer class="container mx-auto p-6 text-center text-slate-400 text-xs mt-12">
+        &copy; 2026 Immo-Bé Truth Engine. Historique des harvests.
+    </footer>
+</body>
+</html>

@@ -37,11 +37,16 @@ async def process_detection(
     platform_id: str, 
     platform_name: str, 
     session: AsyncSession,
-    extra_data: dict = None
+    extra_data: dict = None,
+    skip_scraping: bool = False
 ) -> bool:
     """
     Core logic to check if a listing exists, create it if not, and push to queue.
     Returns True if a new listing was created, False otherwise.
+    
+    Args:
+        skip_scraping: If True, marks listing as SCANNED and doesn't push to Redis queue
+                       (useful when API already provides all data, like Century21)
     """
     statement = select(Listing).where(Listing.source_id == platform_id)
     result = await session.execute(statement)
@@ -56,26 +61,63 @@ async def process_detection(
         source_id=platform_id,
         platform=platform_name,
         url=url,
-        status="PENDING",
-        is_scraped=False
+        status="SCANNED" if skip_scraping else "PENDING",
+        is_scraped=skip_scraping
     )
 
     # Populate extra fields if provided
     if extra_data:
+        # Financial
         if "price" in extra_data:
             new_listing.price = extra_data["price"]
+        if "cadastral_income" in extra_data:
+            new_listing.cadastral_income = extra_data.get("cadastral_income")
+            
+        # Spatial
         if "surface_habitable" in extra_data:
             new_listing.surface_habitable = extra_data["surface_habitable"]
         if "surface_terrain" in extra_data:
             new_listing.surface_terrain = extra_data["surface_terrain"]
         if "rooms" in extra_data:
             new_listing.rooms = extra_data["rooms"]
-        if "description" in extra_data:
-            new_listing.description = extra_data["description"]
+        if "bathrooms" in extra_data:
+            new_listing.bathrooms = extra_data.get("bathrooms")
+        if "room_count" in extra_data:
+            new_listing.room_count = extra_data.get("room_count")
+        if "facades" in extra_data:
+            new_listing.facades = extra_data.get("facades")
+            
+        # Location
         if "latitude" in extra_data:
             new_listing.latitude = extra_data["latitude"]
         if "longitude" in extra_data:
             new_listing.longitude = extra_data["longitude"]
+        if "address" in extra_data and isinstance(extra_data["address"], dict):
+            addr = extra_data["address"]
+            new_listing.city = addr.get("city")
+            new_listing.postal_code = addr.get("postal_code")
+            
+        # Property details
+        if "type" in extra_data:
+            new_listing.property_type = extra_data["type"]
+        if "subType" in extra_data:
+            new_listing.property_subtype = extra_data["subType"]
+        if "condition" in extra_data:
+            new_listing.condition = extra_data["condition"]
+        if "construction_year" in extra_data:
+            new_listing.construction_year = extra_data.get("construction_year")
+            
+        # Energy
+        if "energy_label" in extra_data:
+            new_listing.energy_class = extra_data["energy_label"]
+        if "energy_score" in extra_data:
+            new_listing.epc_score = extra_data["energy_score"]
+        if "energy_report_ref" in extra_data:
+            new_listing.epc_reference = extra_data["energy_report_ref"]
+            
+        # Other
+        if "description" in extra_data:
+            new_listing.description = extra_data["description"]
         if "images" in extra_data:
             new_listing.images = extra_data["images"]
         
@@ -88,15 +130,18 @@ async def process_detection(
 
     logger.info(f"New listing created: ID {new_listing.id} for source_id {new_listing.source_id}")
 
-    # Push to Redis scrape_queue
-    payload = {
-        "listing_id": new_listing.id,
-        "url": new_listing.url,
-        "platform": new_listing.platform
-    }
-    
-    await redis_client.push_to_queue("scrape_queue", payload)
-    logger.info(f"URL {new_listing.url} pushed to Redis 'scrape_queue'")
+    # Only push to Redis queue if scraping is needed
+    if not skip_scraping:
+        payload = {
+            "listing_id": new_listing.id,
+            "url": new_listing.url,
+            "platform": new_listing.platform
+        }
+        
+        await redis_client.push_to_queue("scrape_queue", payload)
+        logger.info(f"URL {new_listing.url} pushed to Redis 'scrape_queue'")
+    else:
+        logger.info(f"✅ Listing {new_listing.id} marked as SCANNED (API data complete, no scraping needed)")
 
     return True
 
@@ -179,7 +224,14 @@ async def process_scout_page(platform: str, scout: dict, content: str) -> int:
                     url = f"https://www.century21.be/fr/properiete/a-vendre/maison/{city_slug}/{platform_id}"
                     
                     async with async_session_factory() as session:
-                        created = await process_detection(url, platform_id, platform, session, extra_data=extra)
+                        created = await process_detection(
+                            url, 
+                            platform_id, 
+                            platform, 
+                            session, 
+                            extra_data=extra,
+                            skip_scraping=True  # Century21 API already provides all data
+                        )
                         if created:
                             new_count += 1
             else:

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URLs Scouts | Immo-Bé Watchtower</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <nav class="bg-indigo-700 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-tight">🏰 IMMO-BÉ <span class="font-light text-indigo-200">Watchtower</span></h1>
+            <div class="flex items-center space-x-4">
+                <a href="/" class="text-sm hover:text-indigo-200 transition">← Dashboard</a>
+                <a href="/history" class="text-sm hover:text-indigo-200 transition">📋 Scouts</a>
+                <a href="/harvest-history" class="text-sm hover:text-indigo-200 transition">📦 Harvests</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6">
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-slate-800">🔍 URLs Scannées par les Scouts</h2>
+            <p class="text-slate-600 text-sm mt-1">Configuration des URLs utilisées pour détecter de nouvelles annonces</p>
+        </div>
+
+        {% for platform, scout in scouts.items() %}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+            <div class="px-6 py-4 bg-gradient-to-r {% if platform == 'immoweb' %}from-blue-500 to-blue-600{% else %}from-yellow-500 to-yellow-600{% endif %} text-white">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h3 class="text-lg font-bold uppercase">{{ platform }}</h3>
+                        <p class="text-sm opacity-90">{{ scout.search_urls|length }} URL(s) configurée(s)</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs opacity-75 uppercase">Méthode</p>
+                        <p class="font-bold">{{ scout.method|upper }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6">
+                <!-- Search URLs -->
+                <div class="mb-4">
+                    <h4 class="text-sm font-bold text-slate-700 uppercase mb-3">📡 URLs de Scan</h4>
+                    <div class="space-y-2">
+                        {% for url in scout.search_urls %}
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center justify-between">
+                            <div class="flex-1 min-w-0">
+                                <code class="text-xs text-slate-700 break-all">{{ url }}</code>
+                            </div>
+                            <a href="{{ url }}" target="_blank" class="ml-3 text-indigo-600 hover:text-indigo-800 text-xs font-bold flex-shrink-0">
+                                🔗 Tester
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Patterns -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-700 uppercase mb-2">🔗 Pattern de Lien</h4>
+                        <div class="bg-slate-50 border border-slate-200 rounded p-3">
+                            <code class="text-xs text-slate-700">{{ scout.link_pattern }}</code>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-700 uppercase mb-2">🆔 Pattern d'ID</h4>
+                        <div class="bg-slate-50 border border-slate-200 rounded p-3">
+                            <code class="text-xs text-slate-700">{{ scout.id_pattern }}</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info supplémentaires -->
+                <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p class="text-xs text-blue-800">
+                        <strong>ℹ️ Info:</strong> 
+                        {% if platform == 'immoweb' %}
+                        Immoweb utilise une extraction hybride (JSON + regex) pour récupérer les données enrichies directement depuis leur API interne.
+                        {% elif platform == 'century21' %}
+                        Century21 utilise leur API REST publique. Les données sont déjà complètes, pas besoin de scraping supplémentaire.
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Comment modifier -->
+        <div class="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-2xl shadow-lg p-6 text-white">
+            <h3 class="text-lg font-bold mb-2">💡 Comment modifier ces URLs ?</h3>
+            <p class="text-sm opacity-90 mb-4">
+                Les URLs et patterns sont configurés dans le fichier <code class="bg-white/20 px-2 py-1 rounded">apps/watchtower/src/scouts.py</code>
+            </p>
+            <div class="bg-white/10 rounded-lg p-4">
+                <p class="text-xs font-mono">
+                    SCOUTS = {<br>
+                    &nbsp;&nbsp;"immoweb": {<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;"search_urls": [...],<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;"link_pattern": r"...",<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;...<br>
+                    &nbsp;&nbsp;}<br>
+                    }
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="container mx-auto p-6 text-center text-slate-400 text-xs mt-12">
+        &copy; 2026 Immo-Bé Truth Engine. Configuration des scouts.
+    </footer>
+</body>
+</html>

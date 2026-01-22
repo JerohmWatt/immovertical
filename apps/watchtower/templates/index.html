@@ -40,32 +40,51 @@
         </div>
 
         <!-- Actions Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Manual Detect -->
-            <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-                <h2 class="text-lg font-bold">Détection Manuelle</h2>
-                <form hx-post="/ui/manual-detect" hx-target="#detect-result" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700">URL Immoweb</label>
-                        <input type="text" name="url" placeholder="https://www.immoweb.be/..." 
-                               class="mt-1 block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 border">
-                    </div>
-                    <button type="submit" class="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-lg hover:bg-indigo-700 transition shadow-sm">
-                        Détecter & Analyser
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Manual Detect / Scrape -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                <h2 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">➕ Ajout Manuel</h2>
+                <form hx-post="/ui/manual-scrape" hx-target="#detect-result" class="space-y-3">
+                    <input type="text" name="url" placeholder="URL Immoweb / C21" 
+                           class="block w-full rounded-lg border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs p-2 border">
+                    <button type="submit" class="w-full bg-slate-800 text-white font-bold py-2 rounded-lg hover:bg-black transition shadow-sm text-[10px] uppercase tracking-wider">
+                        Ajouter à la file
                     </button>
                 </form>
-                <div id="detect-result" class="text-sm"></div>
+                <div id="detect-result" class="text-[10px]"></div>
+            </div>
+
+            <!-- Scrape Queue List -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3 flex flex-col">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">⏳ File d'attente</h2>
+                    <button hx-get="/ui/scrape-queue" hx-target="#scrape-queue-container" class="text-indigo-600 text-[9px] font-bold uppercase hover:underline">🔄</button>
+                </div>
+                <div id="scrape-queue-container" hx-get="/ui/scrape-queue" hx-trigger="load, every 10s" class="flex-1 overflow-y-auto min-h-[180px]">
+                    <p class="text-center text-slate-400 text-[10px] italic py-4">Chargement...</p>
+                </div>
+            </div>
+
+            <!-- Scraping Realtime Status -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3 lg:col-span-1 flex flex-col">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-[10px] font-black uppercase text-slate-400 tracking-widest">📡 Live Scraper</h2>
+                    <span class="flex h-2 w-2 rounded-full bg-indigo-500 animate-ping"></span>
+                </div>
+                <div id="scraping-status-container" hx-get="/ui/scraping-status" hx-trigger="load, every 3s" class="flex-1 overflow-y-auto min-h-[180px]">
+                    <p class="text-center text-slate-400 text-[10px] italic py-4">Connexion...</p>
+                </div>
             </div>
 
             <!-- Run Scouts -->
-            <div class="bg-indigo-50 p-8 rounded-2xl border-2 border-indigo-100 flex flex-col justify-center items-center text-center space-y-4">
-                <h2 class="text-lg font-bold text-indigo-900">Scan des Scouts</h2>
-                <p class="text-sm text-indigo-700">Lancer manuellement la recherche sur toutes les plateformes (Immoweb Maisons/Apparts).</p>
+            <div class="bg-indigo-600 p-5 rounded-2xl shadow-lg flex flex-col justify-center items-center text-center space-y-3">
+                <h2 class="text-[10px] font-black text-white uppercase tracking-widest">🛰️ Scan Global</h2>
                 <button hx-post="/ui/run-scouts" hx-indicator="#scout-loader"
-                        class="bg-white text-indigo-700 border-2 border-indigo-600 font-bold px-8 py-3 rounded-xl hover:bg-indigo-600 hover:text-white transition group">
-                    <span id="scout-loader" class="htmx-indicator animate-spin inline-block mr-2">🌀</span>
-                    Lancer le Scan Complet
+                        class="bg-white text-indigo-700 font-black px-5 py-2 rounded-full hover:scale-105 transition transform shadow-xl text-[10px] uppercase">
+                    <span id="scout-loader" class="htmx-indicator animate-spin inline-block mr-1">🌀</span>
+                    Lancer les Scouts
                 </button>
+                <p class="text-[9px] text-indigo-100 uppercase font-medium">Auto-scan toutes les 60min</p>
             </div>
         </div>
 
@@ -97,6 +116,9 @@
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <h2 class="text-lg font-bold uppercase tracking-wider text-slate-600 text-sm">Dernières Détections</h2>
                 <div class="flex space-x-4">
+                    <a href="/history" class="text-indigo-600 text-sm font-bold hover:underline">📋 Scouts</a>
+                    <a href="/harvest-history" class="text-green-600 text-sm font-bold hover:underline">📦 Harvests</a>
+                    <a href="/scout-urls" class="text-purple-600 text-sm font-bold hover:underline">🔍 URLs Scouts</a>
                     <button hx-get="/ui/listings" hx-target="#listings-table" class="text-indigo-600 text-sm font-bold hover:underline">Rafraîchir</button>
                     <a href="/all" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-indigo-700 transition">Voir tout →</a>
                 </div>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historique des Scans | Immo-Bé</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <nav class="bg-slate-900 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="/" class="text-xl font-bold tracking-tight">🏰 IMMO-BÉ <span class="font-light text-slate-400">Archive</span></a>
+            <a href="/" class="text-sm bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition border border-slate-700">← Dashboard</a>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6 max-w-4xl">
+        <div class="space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-slate-800">Historique des Scans</h2>
+                <span class="text-xs text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-200">Dernières 50 sessions</span>
+            </div>
+
+            {% for run in history %}
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-indigo-600">📡</span>
+                        <span class="font-bold text-slate-700">{{ run.time.strftime('%d/%m/%Y à %H:%M:%S') if run.time else 'Date inconnue' }}</span>
+                    </div>
+                    {% set total = 0 %}
+                    {% for p_name, p_data in run.platforms.items() %}
+                        {% set total = total + p_data.count %}
+                    {% endfor %}
+                    <span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-black">+ {{ total }} biens</span>
+                </div>
+                <div class="p-0">
+                    <table class="w-full text-left text-sm">
+                        <tbody class="divide-y divide-slate-100">
+                            {% for p_name, p_data in run.platforms.items() %}
+                            <tr class="hover:bg-slate-50 transition">
+                                <td class="px-6 py-3 font-medium uppercase text-xs text-slate-500 w-1/4">{{ p_name }}</td>
+                                <td class="px-6 py-3">
+                                    {% if p_data.status == "SUCCESS" %}
+                                    <span class="text-emerald-600 font-bold">+ {{ p_data.count }}</span>
+                                    {% else %}
+                                    <span class="text-red-500 text-xs italic">Erreur: {{ p_data.error }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="px-6 py-3 text-right">
+                                    {% if p_data.status == "SUCCESS" %}
+                                    <span class="h-2 w-2 rounded-full bg-emerald-400 inline-block"></span>
+                                    {% else %}
+                                    <span class="h-2 w-2 rounded-full bg-red-400 inline-block"></span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not history %}
+            <div class="bg-white p-20 text-center rounded-2xl border-2 border-dashed border-slate-200">
+                <p class="text-slate-400 italic">Aucun scan enregistré pour le moment.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer class="container mx-auto p-12 text-center text-slate-400 text-xs">
+        Immo-Bé Watchtower • Logiciel de Surveillance Immobilière
+    </footer>
+</body>
+</html>

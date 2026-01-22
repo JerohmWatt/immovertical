@@ -4,9 +4,21 @@ sqlmodel
 geoalchemy2
 asyncpg
 psycopg2-binary
-redis
+redis==5.0.1
 google-generativeai
 pydantic-settings
 httpx
 python-multipart
 jinja2
+
+# Phase 1: Resilience & Logging
+structlog==23.2.0
+tenacity==8.2.3
+aiolimiter==1.1.0
+
+# Phase 2: Observability
+prometheus-client==0.19.0
+
+# Security
+slowapi==0.1.9
+python-dotenv==1.0.0

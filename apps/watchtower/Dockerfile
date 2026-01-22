@@ -2,10 +2,11 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Installation des dépendances système pour psycopg2 (Postgres)
+# Installation des dépendances système pour psycopg2 (Postgres) et healthcheck
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copie des requirements

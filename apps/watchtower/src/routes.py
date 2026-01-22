@@ -2,15 +2,21 @@ import logging
 import asyncio
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, desc, func
+from sqlmodel import select, desc, func, text
 from datetime import datetime
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from common.models import Listing, ScanHistory
-from common.database import get_session
+from common.database import get_session, engine as db_engine
 from common.redis_client import redis_client
+from common.metrics import (
+    export_metrics, queue_length, listings_by_status,
+    MetricsTimer, scout_runs_total, scout_listings_found, scout_duration_seconds
+)
 from .utils import extract_platform_id
 from .dependencies import templates
 from . import engine
@@ -18,6 +24,7 @@ from . import engine
 logger = logging.getLogger("watchtower.routes")
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 class DetectRequest(BaseModel):
     url: str
@@ -25,19 +32,155 @@ class DetectRequest(BaseModel):
     platform_name: str
     extra_data: Optional[Dict[str, Any]] = None
 
+# ========== HEALTH CHECK ENDPOINTS ==========
+
+@router.get("/health")
+async def health_check():
+    """
+    Basic health check - returns 200 if service is running.
+    Used by Docker healthcheck and load balancers.
+    """
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "healthy",
+            "service": "watchtower",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
+
+@router.get("/ready")
+async def readiness_check():
+    """
+    Readiness check - verifies all dependencies are available.
+    Returns 200 if ready to serve traffic, 503 otherwise.
+    """
+    checks = {
+        "database": False,
+        "redis": False
+    }
+    errors = []
+    
+    # Check Database
+    try:
+        async with db_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+            checks["database"] = True
+    except Exception as e:
+        errors.append(f"Database: {str(e)[:100]}")
+    
+    # Check Redis
+    try:
+        redis_health = await redis_client.health_check()
+        checks["redis"] = redis_health["status"] == "healthy"
+        if not checks["redis"]:
+            errors.append(f"Redis: {redis_health.get('error', 'Unknown error')}")
+    except Exception as e:
+        errors.append(f"Redis: {str(e)[:100]}")
+    
+    # Overall status
+    all_healthy = all(checks.values())
+    
+    return JSONResponse(
+        status_code=200 if all_healthy else 503,
+        content={
+            "status": "ready" if all_healthy else "not_ready",
+            "service": "watchtower",
+            "checks": checks,
+            "errors": errors if errors else None,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
+
+@router.get("/metrics")
+async def prometheus_metrics():
+    """
+    Prometheus metrics endpoint.
+    Returns metrics in Prometheus exposition format.
+    """
+    from fastapi.responses import Response
+    
+    # Update gauge metrics before export
+    try:
+        # Queue lengths
+        if redis_client.client:
+            pending_len = await redis_client.client.llen("scrape_queue")
+            active_len = await redis_client.client.llen("active_scrape_queue")
+            queue_length.labels(queue_name="scrape_queue").set(pending_len)
+            queue_length.labels(queue_name="active_scrape_queue").set(active_len)
+    except:
+        pass
+    
+    metrics_output = export_metrics()
+    return Response(
+        content=metrics_output,
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
+
+@router.get("/metrics/simple")
+async def simple_metrics(session: AsyncSession = Depends(get_session)):
+    """
+    Simple metrics endpoint for monitoring (JSON format).
+    Returns basic operational metrics.
+    """
+    try:
+        # Count listings by status
+        status_counts = {}
+        for status in ["PENDING", "SCANNED", "FAILED", "ERROR", "SCRAPING"]:
+            stmt = select(func.count()).select_from(Listing).where(Listing.status == status)
+            result = await session.execute(stmt)
+            count = result.scalar() or 0
+            status_counts[status.lower()] = count
+            # Update Prometheus gauge
+            listings_by_status.labels(status=status).set(count)
+        
+        # Queue lengths
+        pending_queue = await redis_client.client.llen("scrape_queue") if redis_client.client else 0
+        active_queue = await redis_client.client.llen("active_scrape_queue") if redis_client.client else 0
+        
+        # Update Prometheus gauges
+        queue_length.labels(queue_name="scrape_queue").set(pending_queue)
+        queue_length.labels(queue_name="active_scrape_queue").set(active_queue)
+        
+        # Redis health
+        redis_health = await redis_client.health_check()
+        
+        return JSONResponse(content={
+            "timestamp": datetime.utcnow().isoformat(),
+            "listings": status_counts,
+            "queues": {
+                "scrape_queue": pending_queue,
+                "active_scrape_queue": active_queue
+            },
+            "redis": redis_health,
+            "scout": {
+                "last_run": engine.last_run_time.isoformat() if engine.last_run_time else None,
+                "last_new_count": engine.last_run_new_count,
+                "is_running": engine.scout_lock.locked()
+            }
+        })
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+# ========== MAIN ROUTES ==========
+
 @router.post("/detect")
-async def detect(request: DetectRequest, session: AsyncSession = Depends(get_session)):
+@limiter.limit("100/minute")
+async def detect(request: Request, detect_req: DetectRequest, session: AsyncSession = Depends(get_session)):
     """
     Endpoint to detect a new listing.
     """
-    logger.info(f"Detection request received: {request.platform_id} on {request.platform_name}")
+    logger.info(f"Detection request received: {detect_req.platform_id} on {detect_req.platform_name}")
     try:
         created = await engine.process_detection(
-            request.url, 
-            request.platform_id, 
-            request.platform_name, 
+            detect_req.url, 
+            detect_req.platform_id, 
+            detect_req.platform_name, 
             session,
-            extra_data=request.extra_data
+            extra_data=detect_req.extra_data
         )
         if created:
             return {"message": "Detected and queued"}
@@ -537,7 +680,8 @@ async def ui_listings(session: AsyncSession = Depends(get_session)):
     return HTMLResponse(content=html_rows or '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-400 italic">Aucune annonce détectée.</td></tr>')
 
 @router.post("/ui/manual-scrape")
-async def ui_manual_scrape(url: str = Form(...), session: AsyncSession = Depends(get_session)):
+@limiter.limit("20/minute")
+async def ui_manual_scrape(request: Request, url: str = Form(...), session: AsyncSession = Depends(get_session)):
     """
     Manually push a URL to the scrape_queue for immediate processing by Harvester.
     """
@@ -590,7 +734,8 @@ async def ui_manual_scrape(url: str = Form(...), session: AsyncSession = Depends
         return HTMLResponse(content=f'<p class="text-red-600 font-bold">❌ Erreur: {str(e)}</p>')
 
 @router.post("/ui/run-scouts")
-async def ui_run_scouts():
+@limiter.limit("5/hour")
+async def ui_run_scouts(request: Request):
     if engine.scout_lock.locked():
         return HTMLResponse(content='<p class="text-amber-600 font-bold">⚠️ Scan déjà en cours...</p>')
     
@@ -610,7 +755,8 @@ async def ui_clear_listings(session: AsyncSession = Depends(get_session)):
         return HTMLResponse(content=f'<p class="text-red-600 font-bold text-xs">❌ Erreur DB: {str(e)}</p>')
 
 @router.post("/ui/clear-redis")
-async def ui_clear_redis():
+@limiter.limit("5/hour")
+async def ui_clear_redis(request: Request):
     try:
         if not redis_client.client:
             await redis_client.connect()
